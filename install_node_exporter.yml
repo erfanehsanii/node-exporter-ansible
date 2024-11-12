@@ -1,0 +1,73 @@
+---
+- name: Install Node Exporter
+  hosts: node_exporter_servers
+  become: yes
+  vars:
+    node_exporter_version: "1.8.2"
+    node_exporter_url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+    node_exporter_user: "node_exporter"
+    node_exporter_path: "/usr/local/bin/node_exporter"
+
+  tasks:
+    - name: Install dependencies
+      apt:
+        name: wget
+        state: present
+      become: yes
+
+    - name: Download Node Exporter
+      get_url:
+        url: "{{ node_exporter_url }}"
+        dest: /tmp/node_exporter.tar.gz
+      become: yes
+      retries: 3  # Retry in case of network issues
+      delay: 10
+
+    - name: Extract Node Exporter
+      unarchive:
+        src: /tmp/node_exporter.tar.gz
+        dest: /tmp/
+        remote_src: yes  # Ensures file extraction on the remote machine
+      become: yes
+
+    - name: Move Node Exporter binary to /usr/local/bin
+      command: mv /tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter /usr/local/bin/node_exporter
+      become: yes
+
+    - name: Create node_exporter system user
+      user:
+        name: "{{ node_exporter_user }}"
+        shell: /bin/false
+        system: yes
+      become: yes
+
+    - name: Create Node Exporter systemd service file
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        content: |
+          [Unit]
+          Description=Node Exporter
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User={{ node_exporter_user }}
+          ExecStart={{ node_exporter_path }}
+
+          [Install]
+          WantedBy=default.target
+      become: yes
+
+    - name: Start and enable Node Exporter service
+      systemd:
+        name: node_exporter
+        enabled: yes
+        state: started
+      become: yes
+
+    - name: Clean up temporary files
+      file:
+        path: /tmp/node_exporter*
+        state: absent
+      become: yes
+
